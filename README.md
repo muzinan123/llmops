@@ -54,9 +54,6 @@ pytest
 
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to this project.
 
-## License
-
-[Add license information for your project here]
 
 ## Contact
 
