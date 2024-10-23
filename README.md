@@ -3,9 +3,10 @@
 LLMOps is a Python project designed for the operations and management of Large Language Models (LLMs). This project aims to simplify the deployment, monitoring, and management processes of LLMs.
 
 ## Project Structure
-
+![11](https://github.com/user-attachments/assets/612205cc-e13e-4b8e-8fdb-7f35b61d3e0e)
 ```
 llmops/
+
 ├── app/
 ├── config/
 ├── internal/
