@@ -1,0 +1,15 @@
+- category: search
+  name: search
+  icon: search.svg
+- category: image
+  name: image
+  icon: image.svg
+- category: weather
+  name: weather
+  icon: weather.svg
+- category: tool
+  name: tool
+  icon: tool.svg
+- category: other
+  name: other
+  icon: other.svg
