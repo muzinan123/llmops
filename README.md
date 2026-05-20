@@ -132,6 +132,11 @@ pytest
 
 ---
 
-## Roadmap
+## 📝 Related Articles
 
-🚧 Streaming response support | RAG Reranker integration | LangGraph multi-agent orchestration | Docker Compose one-click deployment
+📚 [Building Enterprise Agent Systems: Core Component Design and Optimization](https://dev.to/jamesli/building-enterprise-agent-systems-core-component-design-and-optimization-5h6c)
+
+📚 [Agent Tool Development Guide: From Design to Optimization](https://dev.to/jamesli/agent-tool-development-guide-from-design-to-optimization-58l4)
+
+📚 [Building an Agent Tool Management Platform: A Practical Architecture Guide](https://dev.to/jamesli/building-an-agent-tool-management-platform-a-practical-architecture-guide-1h2a)
+
