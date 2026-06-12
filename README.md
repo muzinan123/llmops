@@ -1,6 +1,7 @@
 # LLMOps — Large Language Model Operations Platform
 
-> Not a script that wraps API calls. A production-grade LLM backend engineering framework.
+> Not a script that wraps API calls.  
+> A production-grade LLM application backend — from knowledge base to Agent, from single-turn chat to multi-channel deployment.
 
 ---
 
@@ -10,18 +11,29 @@ The real challenge of taking LLMs from demo to production is never the model its
 
 - Knowledge base documents can run hundreds of pages, vectorization is slow — **how do you keep the main flow non-blocking?**
 - Repeated vectorization of the same content wastes API budget — **how do you eliminate redundant embedding calls?**
-- Different scenarios need different tools (search, image generation, weather) — **how do you make Agent capabilities extensible instead of hardcoded?**
 - Keyword search misses semantics; vector search misses exact terms — **how do you get the best of both?**
+- Different scenarios need different tools (search, image generation, weather) — **how do you make Agent capabilities extensible instead of hardcoded?**
+- The same Agent needs to serve a web app, an API, and WeChat simultaneously — **how do you unify multi-channel deployment without duplicating logic?**
 - Business logic, AI logic, and data layer tangled together — **how do you keep the system testable, maintainable, and iterable?**
 
 This project answers each of these questions with concrete engineering decisions.
 
-✅ Async document indexing & vectorization — zero blocking on the main flow  
-✅ Redis Cache-Backed Embeddings — redundant vectorization calls eliminated  
-✅ Hybrid Retrieval + RRF fusion — semantic + keyword, best of both  
-✅ RAG-as-Tool — knowledge base plugged directly into Agent as a callable tool  
-✅ Dynamic tool registration — Agent capabilities extensible at runtime  
-✅ Clean Architecture 3-layer separation — fully testable end to end  
+---
+
+## Platform Capabilities at a Glance
+
+| Category | Capability |
+| :--- | :--- |
+| **Agent Engine** | FunctionCall + ReACT dual-mode, auto-selected at runtime by model feature detection |
+| **Memory** | Short-term `TokenBufferMemory` + long-term rolling summary, both injected per turn |
+| **Tool System** | Built-in tools + OpenAPI custom tools + Workflow-as-Tool, unified `BaseTool` interface |
+| **RAG Pipeline** | 5-stage async indexing → dual-track index → 3-strategy hybrid retrieval |
+| **Multi-Channel** | Debug / WebApp / OpenAPI / WeChat — one Agent config, four deployment channels |
+| **Config Versioning** | Draft → Publish → History → Rollback, full lifecycle with snapshot isolation |
+| **Observability** | Per-step AgentThought token/price/latency + 7-day trend dashboard with WoW comparison |
+| **Auth** | JWT + GitHub OAuth + API Key, three authentication modes |
+| **Storage** | Tencent Cloud COS + MD5 dedup + upload whitelist |
+| **Voice** | Whisper STT + streaming TTS output |
 
 ---
 
@@ -29,19 +41,19 @@ This project answers each of these questions with concrete engineering decisions
 
 ### Decision 1: Async-First — All High-Latency AI Tasks Offloaded to a Task Queue
 
-**Problem**: Document parsing, text chunking, and vectorization are inherently high-latency operations. Handling them synchronously blocks the API response directly, resulting in a terrible user experience.
+**Problem**: Document parsing, text chunking, and vectorization are inherently high-latency operations. Handling them synchronously blocks the API response directly.
 
-**Decision**: Introduced **Celery + Redis** to build an async task layer. All document indexing and vector write operations are fully asynchronous — the API layer only accepts requests and returns task status. The indexing pipeline runs as a 5-stage state machine: `WAITING → PARSING → SPLITTING → INDEXING → COMPLETED`.
+**Decision**: Introduced **Celery + Redis** to build an async task layer. All document indexing and vector write operations are fully asynchronous. The indexing pipeline runs as a **5-stage state machine**: `WAITING → PARSING → SPLITTING → INDEXING → COMPLETED`, with each stage's timestamp and error state persisted — fully traceable and recoverable.
 
-**Outcome**: Main flow response time is completely decoupled from document volume. The system is engineered to handle large-scale knowledge bases without degradation.
+**Outcome**: Main flow response time is completely decoupled from document volume. The system handles large-scale knowledge bases without degradation.
 
 ---
 
 ### Decision 2: Redis Cache-Backed Embeddings — Eliminate Redundant API Calls
 
-**Problem**: Calling the OpenAI Embedding API for the same content repeatedly wastes token budget and adds unnecessary latency. In a knowledge base system, document re-indexing and query-time embedding both risk hitting the same content multiple times.
+**Problem**: Calling the OpenAI Embedding API for the same content repeatedly wastes token budget. In a knowledge base system, document re-indexing and query-time embedding both risk hitting the same content multiple times.
 
-**Decision**: Wrapped `OpenAIEmbeddings` with LangChain's **`CacheBackedEmbeddings`** backed by a **Redis store**. Every embedding result is persisted by content hash — identical text is never sent to the API twice.
+**Decision**: Wrapped `OpenAIEmbeddings` with LangChain's **`CacheBackedEmbeddings`** backed by a **Redis store**. Every embedding result is persisted by content hash — identical text is never sent to the API twice. Additionally, a **content hash comparison** is applied on segment updates — the vector store is only updated when content actually changes.
 
 ```python
 self._cache_backed_embeddings = CacheBackedEmbeddings.from_bytes_store(
@@ -54,7 +66,7 @@ self._cache_backed_embeddings = CacheBackedEmbeddings.from_bytes_store(
 | Approach | Repeated Content | Cost Behavior |
 | :--- | :--- | :--- |
 | Raw OpenAI Embedding API | Re-embeds every time | Scales linearly with calls |
-| **Cache-Backed Embeddings (this project)** | Cache hit, zero API call | Marginal cost drops to zero after first embed |
+| **Cache-Backed + Hash Check (this project)** | Cache hit + skip unchanged | Marginal cost drops to zero after first embed |
 
 ---
 
@@ -62,68 +74,91 @@ self._cache_backed_embeddings = CacheBackedEmbeddings.from_bytes_store(
 
 **Problem**: Pure vector search misses exact keyword matches; pure keyword search misses semantic similarity. Neither alone is sufficient for production RAG.
 
-**Decision**: Built a **dual-track index** (Weaviate vector store + Jieba keyword table) and implemented **three retrieval strategies** selectable at runtime:
+**Decision**: Built a **dual-track index** (Weaviate vector store + Jieba keyword inverted index) maintained in **strong consistency** — every segment create/update/delete synchronizes both indexes atomically. Three retrieval strategies are selectable at runtime:
 
 - **Semantic Search** — dense vector similarity via Weaviate
 - **Full-Text Search** — sparse keyword matching via Jieba-tokenized inverted index
 - **Hybrid Search** — both tracks run in parallel, results fused via **Reciprocal Rank Fusion (RRF)**
 
-RRF merges ranked lists without requiring score normalization — robust across heterogeneous retrieval sources.
+Concurrent writes to the keyword index are protected by **Redis distributed locks** — no phantom data under parallel indexing.
 
-**Outcome**: Retrieval quality adapts to query type. Exact-match queries and semantic queries both get optimal results from the same pipeline.
-
----
-
-### Decision 4: Dual-Track Tool Layer — Agent Capabilities Dynamically Extensible
-
-**Problem**: Hardcoded tool lists are the most common anti-pattern in Agent systems — every new tool requires changes to core code, making extension expensive and maintenance a nightmare.
-
-**Decision**: The tool layer uses a **dual-track parallel** architecture:
-- **Built-in Tools (BuiltinToolProvider)**: Pre-configured high-frequency tools ready out of the box — Google Serper, DuckDuckGo, Wikipedia, DALL-E 3, Gaode Weather, and more. Loaded via factory pattern at runtime — zero hardcoded dispatch.
-- **Custom Tools (ApiTool)**: Supports dynamic registration of any external API via OpenAPI spec. Parameters are validated on ingestion, and a type-safe Pydantic model is generated at runtime via `create_model()` — zero changes to core code.
-
-Both tracks expose a unified `BaseTool` interface to the Agent — the Agent has no awareness of which track a tool comes from.
-
-**Outcome**: Agent tool capabilities are extensible at runtime. Core dispatch logic requires zero modification.
+**Outcome**: Retrieval quality adapts to query type. Dual-index strong consistency is maintained across all write paths.
 
 ---
 
-### Decision 5: Clean Architecture — 3-Layer Separation for Full Testability
+### Decision 4: Unified Tool Layer — Three Tracks, One Interface
 
-**Problem**: LLM projects iterate fast in early stages. Mixing business logic, AI logic, and database operations is the norm — and it makes code nearly impossible to test or refactor.
+**Problem**: Hardcoded tool lists are the most common anti-pattern in Agent systems — every new tool requires changes to core code.
 
-**Decision**: Strictly enforced **Handler → Service → Core** 3-layer separation:
+**Decision**: The tool layer uses a **three-track parallel** architecture, all exposing a unified `BaseTool` interface:
+
+- **Built-in Tools**: Pre-configured tools (Google Serper, DuckDuckGo, Wikipedia, DALL-E 3, Gaode Weather, etc.) loaded via factory pattern — zero hardcoded dispatch
+- **Custom API Tools**: Dynamic registration via OpenAPI Schema — parameters validated on ingestion, type-safe Pydantic model generated at runtime via `create_model()`
+- **Workflow-as-Tool**: Published workflows are wrapped as `BaseTool` — the Agent calls a workflow exactly like any other tool, with no awareness of the underlying DAG
+
+The Agent has zero awareness of which track a tool comes from. Core dispatch logic requires zero modification to extend.
+
+---
+
+### Decision 5: Multi-Channel Deployment — One Agent Config, Four Channels
+
+**Problem**: The same Agent logic needs to serve a developer API, an embedded web app, and WeChat simultaneously — duplicating execution logic per channel is unmaintainable.
+
+**Decision**: All four channels converge on the same Agent execution core:
+
+| Channel | Auth | User Model | Special Handling |
+| :--- | :--- | :--- | :--- |
+| Debug | Login session | Account | Draft config, no publish required |
+| WebApp | App Token | Account | Model `features` exposed to drive frontend UI |
+| OpenAPI | API Key | EndUser | Multi-tenant end-user isolation |
+| WeChat | Signature verify | WechatEndUser | Thread + Customer Service API push to solve 5s timeout |
+
+The WeChat channel deserves special mention: WeChat requires a response within **5 seconds**, but Agent inference can take 10–30 seconds. The solution — return a placeholder reply immediately, run inference in a background thread, then **proactively push the result via WeChat Customer Service API**. No timeout, no polling.
+
+---
+
+### Decision 6: Clean Architecture — 3-Layer Separation for Full Testability
+
+**Decision**: Strictly enforced **Handler → Service → Core** 3-layer separation across **30+ service classes**:
+
 - **Handler Layer**: HTTP request parsing and input validation only (Marshmallow Schema) — no business logic, no DB access
 - **Service Layer**: Pure business logic orchestration — no awareness of HTTP internals
-- **Core Layer**: AI capability encapsulation (Embeddings, vector retrieval, tool dispatch, RAG-as-Tool) — independently testable
+- **Core Layer**: AI capability encapsulation (Embeddings, vector retrieval, tool dispatch, Agent execution) — independently testable
 
-Infrastructure initialization (Celery, Redis, Weaviate, DB) is further isolated into a dedicated `extension/` layer — keeping startup lifecycle concerns out of business code entirely.
+Infrastructure initialization (Celery, Redis, Weaviate, DB) is isolated into a dedicated `extension/` layer. **Dependency injection via `Injector`** eliminates manual wiring across all 30+ services.
 
-**Outcome**: The test suite can directly test Service and Core layer logic without starting Flask. CI efficiency is significantly improved.
+**Outcome**: Service and Core layer logic is testable without starting Flask. CI efficiency is significantly improved.
 
 ---
 
 ## System Overview
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                      HTTP API Layer                      │
-│   AppHandler  DatasetHandler  ToolHandler  FileHandler   │
-└─────────────────────────┬────────────────────────────────┘
-                           │
-┌─────────────────────────▼────────────────────────────────┐
-│                     Service Layer                        │
-│   AppService  DatasetService  ToolService  CosService    │
-└──────┬──────────────────┬──────────────────┬────────────┘
-       │                  │                  │
-┌──────▼──────┐  ┌────────▼───────┐  ┌───────▼───────────┐
-│  Core AI    │  │  Data Layer    │  │  Async Task Layer  │
-│  Embeddings │  │  PostgreSQL    │  │  Celery + Redis    │
-│  (w/ Cache) │  │  SQLAlchemy    │  │  5-Stage Indexing  │
-│  VectorDB   │  │  COS Storage   │  │  Pipeline          │
-│  Hybrid RAG │  └────────────────┘  └───────────────────┘
-│  Tools      │
-└─────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    Multi-Channel Access Layer               │
+│         Debug │ WebApp │ OpenAPI │ WeChat (async push)      │
+└────────────────────────────┬────────────────────────────────┘
+                             ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Agent Execution Core                     │
+│         FunctionCallAgent ←→ ReACTAgent (auto-routed)       │
+│    TokenBufferMemory + LongTerm Summary + ReviewConfig      │
+│              AgentQueueManager (stream events)              │
+└──────────┬──────────────────┬──────────────────┬───────────┘
+           ↓                  ↓                  ↓
+┌──────────────────┐ ┌────────────────┐ ┌────────────────────┐
+│   Tool System    │ │  RAG Pipeline  │ │  Workflow Engine   │
+│  BuiltinTool     │ │  Semantic      │ │  DAG Node Stream   │
+│  ApiTool         │ │  FullText      │ │  Workflow-as-Tool  │
+│  WorkflowTool    │ │  Hybrid (RRF)  │ │                    │
+└──────────────────┘ └────────────────┘ └────────────────────┘
+           ↓                  ↓                  ↓
+┌─────────────────────────────────────────────────────────────┐
+│              Observability + Persistence Layer              │
+│  AgentThought (token/price/latency) │ DatasetQuery Logs     │
+│  Message History (soft delete)      │ Analysis Dashboard    │
+│  Redis Cache │ Weaviate │ PostgreSQL │ Tencent COS          │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -133,15 +168,19 @@ Infrastructure initialization (Celery, Redis, Weaviate, DB) is further isolated 
 | Layer | Technology |
 | :--- | :--- |
 | Web Framework | Flask |
+| Agent Framework | LangChain (LCEL, Tools, Memory) |
 | Async Tasks | Celery + Redis |
 | Vector Store | Weaviate |
 | Embeddings | OpenAI Embeddings + Redis Cache-Backed Layer |
 | Hybrid Retrieval | Weaviate (semantic) + Jieba (keyword) + RRF fusion |
-| Local LLM | Ollama (chat models, e.g. Qwen2.5) |
+| Local LLM | Ollama (e.g. Qwen2.5) |
 | ORM & Migrations | SQLAlchemy + Alembic |
 | Data Validation | Marshmallow |
 | Chinese Tokenization | Jieba |
 | Dependency Injection | Injector |
+| Voice | OpenAI Whisper (STT) + TTS streaming |
+| WeChat Integration | wechatpy |
+| Object Storage | Tencent Cloud COS |
 | Testing | Pytest |
 
 ---
