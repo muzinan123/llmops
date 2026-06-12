@@ -208,10 +208,22 @@ pytest
 
 ---
 
-## 📝 Related Articles
+## 📝 Engineering Articles
 
-📚 [Building Enterprise Agent Systems: Core Component Design and Optimization](https://dev.to/jamesli/building-enterprise-agent-systems-core-component-design-and-optimization-5h6c)
+> The following article series document the core engineering philosophy and technical decisions behind this platform.
 
-📚 [Agent Tool Development Guide: From Design to Optimization](https://dev.to/jamesli/agent-tool-development-guide-from-design-to-optimization-58l4)
+### 🤖 Agent Systems
+📚 [Enterprise LLM Agent Systems Engineering](https://dev.to/jamesli/series/29494) *(7 articles — ReAct, Plan-and-Execute, Tool Design, OpenAI Assistants API)*
 
-📚 [Building an Agent Tool Management Platform: A Practical Architecture Guide](https://dev.to/jamesli/building-an-agent-tool-management-platform-a-practical-architecture-guide-1h2a)
+### ⛓️ LLM Chains & Orchestration
+📚 [Complex LLM Chains Implementation Series](https://dev.to/jamesli/series/29491) *(5 articles — Multi-model routing, Conditional chains, Parallel processing, Context management)*
+
+### 🔧 Framework Deep Dives
+📚 [LangChain Development Guide](https://dev.to/jamesli/series/29453) *(5 articles — Runnable components, Memory, LCEL advanced patterns)*  
+📚 [LangGraph Advanced Tutorial](https://dev.to/jamesli/series/29448) *(9 articles — Streaming, Subgraphs, Checkpoints, Human-in-the-loop)*
+
+### 📚 RAG Pipeline
+📚 [RAG Development & Optimization](https://dev.to/jamesli/series/29434) *(10 articles — Indexing strategy, Hybrid retrieval, Self-query, End-to-end optimization)*
+
+### 🚀 Production Deployment
+📚 [Enterprise-Level Deployment and Optimization of LLM Applications](https://dev.to/jamesli/enterprise-level-deployment-and-optimization-of-llm-applications-a-production-practice-guide-based-3jpg) *(Token management, Latency optimization, Cost control)*
