@@ -32,7 +32,7 @@ This project answers each of these questions with concrete engineering decisions
 | **Config Versioning** | Draft → Publish → History → Rollback, full lifecycle with snapshot isolation |
 | **Observability** | Per-step AgentThought token/price/latency + 7-day trend dashboard with WoW comparison |
 | **Auth** | JWT + GitHub OAuth + API Key + App Token + WeChat Signature, five independent trust models |
-| **Storage** | Storage	Tencent Cloud COS + SHA3-256 content fingerprinting + extension whitelist |
+| **Storage** | Tencent Cloud COS + SHA3-256 content fingerprinting + extension whitelist |
 | **Voice** | Whisper STT + streaming TTS output |
 
 ---
