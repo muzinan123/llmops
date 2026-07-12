@@ -31,8 +31,8 @@ This project answers each of these questions with concrete engineering decisions
 | **Multi-Channel** | Debug / WebApp / OpenAPI / WeChat — one Agent config, four deployment channels |
 | **Config Versioning** | Draft → Publish → History → Rollback, full lifecycle with snapshot isolation |
 | **Observability** | Per-step AgentThought token/price/latency + 7-day trend dashboard with WoW comparison |
-| **Auth** | JWT + GitHub OAuth + API Key, three authentication modes |
-| **Storage** | Tencent Cloud COS + MD5 dedup + upload whitelist |
+| **Auth** | JWT + GitHub OAuth + API Key + App Token + WeChat Signature, five independent trust models |
+| **Storage** | Storage	Tencent Cloud COS + SHA3-256 content fingerprinting + extension whitelist |
 | **Voice** | Whisper STT + streaming TTS output |
 
 ---
@@ -136,7 +136,7 @@ Infrastructure initialization (Celery, Redis, Weaviate, DB) is isolated into a d
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Multi-Channel Access Layer               │
-│         Debug │ WebApp │ OpenAPI │ WeChat (async push)      │
+│         Debug │ WebApp │ OpenAPI │ WeChat (polling)       │
 └────────────────────────────┬────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────┐
