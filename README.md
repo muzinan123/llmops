@@ -37,7 +37,7 @@ This project answers each of these questions with concrete engineering decisions
 
 ---
 
-## Five Core Engineering Decisions
+## Six Core Engineering Decisions
 
 ### Decision 1: Async-First — All High-Latency AI Tasks Offloaded to a Task Queue
 
@@ -111,9 +111,9 @@ The Agent has zero awareness of which track a tool comes from. Core dispatch log
 | Debug | Login session | Account | Draft config, no publish required |
 | WebApp | App Token | Account | Model `features` exposed to drive frontend UI |
 | OpenAPI | API Key | EndUser | Multi-tenant end-user isolation |
-| WeChat | Signature verify | WechatEndUser | Thread + Customer Service API push to solve 5s timeout |
+| WeChat | Signature verify | WechatEndUser | Thread + placeholder reply + follow-up polling to solve 5s timeout |
 
-The WeChat channel deserves special mention: WeChat requires a response within **5 seconds**, but Agent inference can take 10–30 seconds. The solution — return a placeholder reply immediately, run inference in a background thread, then **proactively push the result via WeChat Customer Service API**. No timeout, no polling.
+The WeChat channel deserves special mention: WeChat requires a response within 5 seconds, but Agent inference can take 10–30 seconds. The solution — return a placeholder reply immediately, run inference in a background thread, and persist the result once ready. The user triggers a follow-up message to check completion status and retrieve the answer — no timeout, no blocking wait.
 
 ---
 
